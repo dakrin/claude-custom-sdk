@@ -6,6 +6,15 @@ A flexible Python command-line interface for interacting with Claude CLI that pr
 
 Claude SDK wraps the Claude CLI to provide automatic session management and structured output. For direct access to Claude CLI, use `--simple` as the first argument.
 
+### Key Features
+- **Clean session tracking** without cluttering the workspace
+- **Smart system prompt hierarchy** (CLI > config > default)
+- **Support for both text and JSON outputs** with format-specific defaults
+- **Simple mode** for direct Claude CLI access
+- **Automatic session logging** for debugging while keeping your working directory clean
+
+The `.claude-sdk/` directory keeps everything organized - conversation logs, outputs, and system prompts - while `prompt.txt` stays visible where you're working. You get easy output handling for scripts and full control over Claude's behavior when needed.
+
 ## How It Works
 
 ### Default Behavior
