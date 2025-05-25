@@ -15,6 +15,15 @@ Claude SDK wraps the Claude CLI to provide automatic session management and stru
 
 The `.claude-sdk/` directory keeps everything organized - conversation logs, outputs, and system prompts - while `prompt.txt` stays visible where you're working. You get easy output handling for scripts and full control over Claude's behavior when needed.
 
+**⚠️ Warning: Claude has access to the Write tool by default (so he can log his response to disk) - please use cautiously**
+
+To disable the Write tool, use `--tools` without including Write (note: at least one tool must be specified):
+```bash
+# Example: Remove Write access by specifying --tools Read
+claude-sdk --prompt "Analyze this" --tools Read
+```
+Note: If you do this without modifying the system prompt, Claude will not be able to write the output file.
+
 ## How It Works
 
 ### Default Behavior
