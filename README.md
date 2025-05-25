@@ -11,15 +11,19 @@ Claude SDK wraps the Claude CLI to provide automatic session management and stru
 ### Default Behavior
 - Creates a timestamped directory in `.claude-sdk/`
 - Claude streams its conversation as JSON to `conversation.json`
-- Claude is instructed to write final output to `output.txt`
-- Optionally streams `output.txt` content to stdout with `--return-output`
+- Claude is instructed to write final output to `output.txt` or `output.json`
+- Optionally streams output file content to stdout with `--return-output`
 - Always uses `-p --output-format stream-json --verbose`
 
 ### System Prompt
-- Automatically creates `.claude-sdk/system-prompt.txt` on first run
-- Default content: Instructs Claude to save output to `output.txt`
-- Edit this file anytime to customize Claude's behavior
-- Applied to end of every prompt automatically
+System prompts are applied in this order (highest priority first):
+1. **CLI flag**: `--system-prompt "Your custom prompt"`
+2. **Config file**: `.claude-sdk/system-prompt.txt` (if manually created)
+3. **Default**: Based on `--output-format`:
+   - Text: Save to `output.txt`
+   - JSON: Save valid JSON to `output.json`
+
+The actual system prompt used is saved in each session directory for reference.
 
 ### Simple Mode (`--simple`)
 - Pure passthrough to Claude CLI with auto-added `-p` flag
@@ -73,18 +77,29 @@ claude-sdk --session-name feature_x
 claude-sdk --prompt "Analyze this" -o results/analysis.txt
 ```
 
+### Output Formats
+
+```bash
+# Text format (default) - outputs to output.txt
+claude-sdk --prompt "Explain quantum computing"
+
+# JSON format - outputs to output.json
+claude-sdk --prompt "List programming languages" --output-format json
+```
+
 ### Custom System Prompt
 
 ```bash
-# First run creates .claude-sdk/system-prompt.txt automatically
-claude-sdk --prompt "test"
+# Method 1: CLI flag (one-time use)
+claude-sdk --prompt "Describe the sky" --system-prompt "Answer in exactly 5 words"
 
-# Edit the system prompt
-echo "Please format your response as a JSON object with 'result' and 'explanation' fields." > .claude-sdk/system-prompt.txt
+# Method 2: Config file (persistent)
+echo "Always include pros and cons in your analysis" > .claude-sdk/system-prompt.txt
+claude-sdk --prompt "Should I learn Rust?"
 
-# Now all prompts will include this instruction
-claude-sdk --prompt "Calculate 15 + 27"
-# Claude will output JSON instead of writing to output.txt
+# Method 3: JSON-specific prompt via CLI
+claude-sdk --prompt "Analyze this data" --output-format json \
+  --system-prompt "Return a JSON object with 'summary' and 'details' fields"
 ```
 
 ### Output Modes
@@ -121,9 +136,11 @@ claude-sdk --all-tools
 |----------|-------|-------------|---------|
 | `--prompt-file` | `-p` | Path to prompt file | `prompt.txt` |
 | `--prompt` | | Direct prompt string (overrides file) | |
-| `--return-output` | | Stream output.txt to stdout | `False` |
+| `--return-output` | | Stream output file to stdout | `False` |
 | `--session-name` | | Add name to session directory | |
-| `--output` | `-o` | Write output.txt to specified file | |
+| `--output` | `-o` | Write output file to specified location | |
+| `--output-format` | | Output format: text or json | `text` |
+| `--system-prompt` | | Override system prompt for this run | |
 | `--model` | `-m` | Claude model to use | |
 | `--tools` | `-t` | Tools to allow | Bash, Read, Write, Edit, Task, Grep, Glob |
 | `--all-tools` | | Allow all available tools | `False` |

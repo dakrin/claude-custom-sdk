@@ -11,7 +11,8 @@ from datetime import datetime
 from typing import List, Optional
 
 DEFAULT_TOOLS = ["Bash", "Read", "Write", "Edit", "Task", "Grep", "Glob"]
-DEFAULT_SYSTEM_PROMPT = "\n\n**IMPORTANT**: After completing your analysis, save your full recommendations to a file named 'output.txt' using the Write tool."
+DEFAULT_SYSTEM_PROMPT_TEXT = "**IMPORTANT**: After completing your analysis, save your full recommendations to a file named 'output.txt' using the Write tool."
+DEFAULT_SYSTEM_PROMPT_JSON = "**IMPORTANT**: After completing your analysis, save your results as valid JSON to a file named 'output.json' using the Write tool. The JSON should contain your complete response with appropriate structure."
 
 # TODO: Future enhancements
 # - Implement stdin support: --prompt - to read from pipe
@@ -19,35 +20,35 @@ DEFAULT_SYSTEM_PROMPT = "\n\n**IMPORTANT**: After completing your analysis, save
 # - Support Claude's advanced tool syntax like "Bash(git:*)"
 # - Add session management commands (--list-sessions, --cleanup)
 
-def ensure_system_prompt():
-    """Ensure .claude-sdk/system-prompt.txt exists with default content"""
-    sdk_dir = ".claude-sdk"
-    system_prompt_file = os.path.join(sdk_dir, "system-prompt.txt")
+def get_system_prompt(args):
+    """Get system prompt based on hierarchy: CLI flag > file > default"""
+    # 1. CLI flag takes highest priority
+    if args.system_prompt:
+        return "\n\n" + args.system_prompt
     
-    # Create .claude-sdk directory if it doesn't exist
-    if not os.path.exists(sdk_dir):
-        os.makedirs(sdk_dir, exist_ok=True)
-    
-    # Create system-prompt.txt with default if it doesn't exist
-    if not os.path.exists(system_prompt_file):
+    # 2. Check for user-created system-prompt.txt
+    system_prompt_file = os.path.join(".claude-sdk", "system-prompt.txt")
+    if os.path.exists(system_prompt_file):
         try:
-            with open(system_prompt_file, 'w') as f:
-                f.write(DEFAULT_SYSTEM_PROMPT.strip())
-            print(f"Created {system_prompt_file} with default prompt", file=sys.stderr)
-        except Exception as e:
-            print(f"Warning: Could not create {system_prompt_file}: {e}", file=sys.stderr)
-            return DEFAULT_SYSTEM_PROMPT
+            with open(system_prompt_file, 'r') as f:
+                content = f.read().strip()
+                if content:
+                    return "\n\n" + content
+        except Exception:
+            pass
     
-    # Read and return the system prompt
+    # 3. Use default based on output format
+    default_prompt = DEFAULT_SYSTEM_PROMPT_TEXT if args.output_format == "text" else DEFAULT_SYSTEM_PROMPT_JSON
+    return "\n\n" + default_prompt
+
+def save_system_prompt(output_dir: str, system_prompt: str):
+    """Save the system prompt used for this session"""
     try:
-        with open(system_prompt_file, 'r') as f:
-            content = f.read().strip()
-            if content:
-                return "\n\n" + content
-    except Exception as e:
-        print(f"Warning: Could not read {system_prompt_file}: {e}", file=sys.stderr)
-    
-    return DEFAULT_SYSTEM_PROMPT
+        prompt_path = os.path.join(output_dir, "system-prompt.txt")
+        with open(prompt_path, 'w') as f:
+            f.write(system_prompt.strip())
+    except Exception:
+        pass  # Not critical if this fails
 
 def handle_simple_mode():
     """Handle simple passthrough mode"""
@@ -95,7 +96,17 @@ def parse_arguments():
     )
     parser.add_argument(
         "-o", "--output",
-        help="Override output location (skips .claude-sdk directory)"
+        help="Write output file to specified location"
+    )
+    parser.add_argument(
+        "--output-format",
+        choices=["text", "json"],
+        default="text",
+        help="Output format: text or json (default: text)"
+    )
+    parser.add_argument(
+        "--system-prompt",
+        help="Override system prompt for this run"
     )
     
     # Claude options
@@ -133,7 +144,7 @@ def parse_arguments():
     
     return parser.parse_args()
 
-def read_prompt(args) -> str:
+def read_prompt(args) -> tuple[str, str]:
     """Read prompt from file or argument and append output instruction"""
     base_prompt = ""
     if args.prompt:
@@ -150,7 +161,8 @@ def read_prompt(args) -> str:
             sys.exit(1)
     
     # Always append system prompt
-    return base_prompt + ensure_system_prompt()
+    system_prompt = get_system_prompt(args)
+    return base_prompt + system_prompt, system_prompt
 
 def get_output_directory(args) -> tuple[str, str]:
     """Determine output directory and file path"""
@@ -188,20 +200,21 @@ def build_claude_command(prompt: str, args) -> List[str]:
     
     return cmd
 
-def read_output_file(output_dir: str) -> Optional[str]:
-    """Read output.txt if it exists"""
-    output_path = os.path.join(output_dir, "output.txt")
+def read_output_file(output_dir: str, output_format: str = "text") -> Optional[str]:
+    """Read output.txt or output.json if it exists"""
+    output_filename = "output.txt" if output_format == "text" else "output.json"
+    output_path = os.path.join(output_dir, output_filename)
     
     if os.path.exists(output_path):
         try:
             with open(output_path, 'r') as f:
                 return f.read()
         except Exception as e:
-            print(f"Warning: Could not read output.txt: {e}", file=sys.stderr)
+            print(f"Warning: Could not read {output_filename}: {e}", file=sys.stderr)
     
     return None
 
-def run_claude(cmd: List[str], prompt: str, output_dir: str, output_file: str, args) -> int:
+def run_claude(cmd: List[str], prompt: str, system_prompt: str, output_dir: str, output_file: str, args) -> int:
     """Execute Claude command and handle output"""
     
     if args.dry_run:
@@ -211,6 +224,9 @@ def run_claude(cmd: List[str], prompt: str, output_dir: str, output_file: str, a
     
     os.makedirs(output_dir, exist_ok=True)
     print(f"Session: {output_dir}", file=sys.stderr)
+    
+    # Save system prompt for this session
+    save_system_prompt(output_dir, system_prompt)
     
     original_dir = os.getcwd()
     os.chdir(output_dir)
@@ -253,16 +269,17 @@ def run_claude(cmd: List[str], prompt: str, output_dir: str, output_file: str, a
     finally:
         os.chdir(original_dir)
     
-    # Handle output.txt after Claude completes successfully
+    # Handle output file after Claude completes successfully
     if return_code == 0:
-        output_content = read_output_file(output_dir)
+        output_content = read_output_file(output_dir, args.output_format)
+        output_filename = "output.txt" if args.output_format == "text" else "output.json"
         
         if args.return_output:
             # Stream to stdout
             if output_content:
                 print(output_content, end='')
             else:
-                print("Note: output.txt was not created (Most likely due to system prompt change)", file=sys.stderr)
+                print(f"Note: {output_filename} was not created (Most likely due to system prompt change)", file=sys.stderr)
         elif args.output:
             # Write to specified file
             if output_content:
@@ -275,7 +292,7 @@ def run_claude(cmd: List[str], prompt: str, output_dir: str, output_file: str, a
                 except Exception as e:
                     print(f"Error writing to {output_path}: {e}", file=sys.stderr)
             else:
-                print("Note: output.txt was not created (Most likely due to system prompt change)", file=sys.stderr)
+                print(f"Note: {output_filename} was not created (Most likely due to system prompt change)", file=sys.stderr)
     
     # Print summary of additional files created (unless streaming to stdout)
     if not args.return_output:
@@ -307,7 +324,7 @@ def main():
     args = parse_arguments()
     
     # Read prompt
-    prompt = read_prompt(args)
+    prompt, system_prompt = read_prompt(args)
     if args.verbose and not args.return_output:
         print(f"Prompt: {prompt[:100]}{'...' if len(prompt) > 100 else ''}", file=sys.stderr)
     
@@ -317,8 +334,8 @@ def main():
     # Build command
     cmd = build_claude_command(prompt, args)
     
-    # Run Claude
-    exit_code = run_claude(cmd, prompt, output_dir, output_file, args)
+    # Run Claude (this creates the directory and saves system prompt)
+    exit_code = run_claude(cmd, prompt, system_prompt, output_dir, output_file, args)
     
     sys.exit(exit_code)
 
