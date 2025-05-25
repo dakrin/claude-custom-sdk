@@ -15,6 +15,12 @@ Claude SDK wraps the Claude CLI to provide automatic session management and stru
 - Optionally streams `output.txt` content to stdout with `--return-output`
 - Always uses `-p --output-format stream-json --verbose`
 
+### System Prompt
+- Automatically creates `.claude-sdk/system-prompt.txt` on first run
+- Default content: Instructs Claude to save output to `output.txt`
+- Edit this file anytime to customize Claude's behavior
+- Applied to end of every prompt automatically
+
 ### Simple Mode (`--simple`)
 - Pure passthrough to Claude CLI with auto-added `-p` flag
 - No session management or file creation
@@ -65,6 +71,20 @@ claude-sdk --session-name feature_x
 
 # Save output to file (still creates .claude-sdk session)
 claude-sdk --prompt "Analyze this" -o results/analysis.txt
+```
+
+### Custom System Prompt
+
+```bash
+# First run creates .claude-sdk/system-prompt.txt automatically
+claude-sdk --prompt "test"
+
+# Edit the system prompt
+echo "Please format your response as a JSON object with 'result' and 'explanation' fields." > .claude-sdk/system-prompt.txt
+
+# Now all prompts will include this instruction
+claude-sdk --prompt "Calculate 15 + 27"
+# Claude will output JSON instead of writing to output.txt
 ```
 
 ### Output Modes
