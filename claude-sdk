@@ -1,0 +1,290 @@
+#!/usr/bin/env python3
+"""
+Claude SDK - A flexible command-line interface for Claude
+"""
+import subprocess
+import sys
+import os
+import json
+import argparse
+from datetime import datetime
+from typing import List, Optional
+
+DEFAULT_TOOLS = ["Bash", "Read", "Write", "Edit", "Task", "Grep", "Glob"]
+OUTPUT_INSTRUCTION = "\n\n**IMPORTANT**: After completing your analysis, save your full recommendations to a file named 'output.txt' using the Write tool."
+
+# TODO: Future enhancements
+# - Implement stdin support: --prompt - to read from pipe
+# - Add --continue and --resume functionality  
+# - Support Claude's advanced tool syntax like "Bash(git:*)"
+# - Add session management commands (--list-sessions, --cleanup)
+
+def handle_simple_mode():
+    """Handle simple passthrough mode"""
+    # Remove the script name and --simple flag
+    claude_args = sys.argv[2:]
+    
+    # Always add -p for non-interactive mode in simple mode
+    cmd = ["claude", "-p"] + claude_args
+    
+    try:
+        # Direct passthrough to Claude
+        process = subprocess.run(cmd)
+        sys.exit(process.returncode)
+    except KeyboardInterrupt:
+        sys.exit(130)
+    except Exception as e:
+        print(f"Error running Claude: {e}", file=sys.stderr)
+        sys.exit(1)
+
+def parse_arguments():
+    """Parse command-line arguments"""
+    parser = argparse.ArgumentParser(
+        description="Claude SDK - Call Claude with flexible parameters",
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    
+    # Input/Output options
+    parser.add_argument(
+        "-p", "--prompt-file",
+        default="prompt.txt",
+        help="Path to prompt file (default: prompt.txt)"
+    )
+    parser.add_argument(
+        "--prompt",
+        help="Direct prompt string (overrides prompt-file)"
+    )
+    parser.add_argument(
+        "--return-output",
+        action="store_true",
+        help="Stream the output.txt content to stdout when complete"
+    )
+    parser.add_argument(
+        "--session-name",
+        help="Add a name to the session directory (e.g., feature_x)"
+    )
+    parser.add_argument(
+        "-o", "--output",
+        help="Override output location (skips .claude-sdk directory)"
+    )
+    
+    # Claude options
+    parser.add_argument(
+        "-m", "--model",
+        help="Claude model to use (e.g., opus, sonnet)"
+    )
+    parser.add_argument(
+        "-t", "--tools",
+        nargs="+",
+        help=f"Tools to allow (default: {', '.join(DEFAULT_TOOLS)})"
+    )
+    parser.add_argument(
+        "--all-tools",
+        action="store_true",
+        help="Allow all available tools"
+    )
+    
+    # Behavior options
+    parser.add_argument(
+        "-v", "--verbose",
+        action="store_true",
+        help="Enable verbose output"
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show command without executing"
+    )
+    parser.add_argument(
+        "--no-stream",
+        action="store_true",
+        help="Don't stream output to console"
+    )
+    
+    return parser.parse_args()
+
+def read_prompt(args) -> str:
+    """Read prompt from file or argument and append output instruction"""
+    base_prompt = ""
+    if args.prompt:
+        base_prompt = args.prompt
+    else:
+        try:
+            with open(args.prompt_file, 'r') as f:
+                base_prompt = f.read().strip()
+        except FileNotFoundError:
+            print(f"Error: Prompt file '{args.prompt_file}' not found")
+            sys.exit(1)
+        except Exception as e:
+            print(f"Error reading prompt file: {e}")
+            sys.exit(1)
+    
+    # Always append output instruction
+    return base_prompt + OUTPUT_INSTRUCTION
+
+def get_output_directory(args) -> tuple[str, str]:
+    """Determine output directory and file path"""
+    # Always use .claude-sdk directory with timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    if args.session_name:
+        session_dir = f"{timestamp}_{args.session_name}"
+    else:
+        session_dir = timestamp
+    
+    output_dir = os.path.join(".claude-sdk", session_dir)
+    return output_dir, "conversation.json"
+
+def build_claude_command(prompt: str, args) -> List[str]:
+    """Build the Claude command with all parameters"""
+    # Always use stream-json with verbose for session tracking
+    cmd = ["claude", "-p", "--output-format", "stream-json", "--verbose", prompt]
+    
+    if args.model:
+        cmd.extend(["--model", args.model])
+    
+    # Handle tools
+    if args.all_tools:
+        # Claude CLI might have a flag for all tools, adjust as needed
+        pass
+    else:
+        tools = args.tools if args.tools else DEFAULT_TOOLS.copy()
+        
+        # Ensure Write tool is included for output.txt
+        if not args.output and "Write" not in tools:
+            tools.append("Write")
+        
+        for tool in tools:
+            cmd.extend(["--allowedTools", tool])
+    
+    return cmd
+
+def read_output_file(output_dir: str) -> Optional[str]:
+    """Read output.txt if it exists"""
+    output_path = os.path.join(output_dir, "output.txt")
+    
+    if os.path.exists(output_path):
+        try:
+            with open(output_path, 'r') as f:
+                return f.read()
+        except Exception as e:
+            print(f"Warning: Could not read output.txt: {e}", file=sys.stderr)
+    
+    return None
+
+def run_claude(cmd: List[str], output_dir: str, output_file: str, args) -> int:
+    """Execute Claude command and handle output"""
+    
+    if args.dry_run:
+        print(f"Command: {' '.join(cmd)}")
+        return 0
+    
+    os.makedirs(output_dir, exist_ok=True)
+    print(f"Session: {output_dir}", file=sys.stderr)
+    
+    original_dir = os.getcwd()
+    os.chdir(output_dir)
+    
+    try:
+        output_path = output_file
+        if args.verbose:
+            print(f"Command: {' '.join(cmd)}", file=sys.stderr)
+        
+        with open(output_path, "w") as outfile:
+            process = subprocess.Popen(
+                cmd,
+                stdout=outfile,
+                stderr=subprocess.PIPE if not args.no_stream else subprocess.DEVNULL,
+                text=True
+            )
+            
+            if not args.no_stream:
+                for line in process.stderr:
+                    print(line, end='', file=sys.stderr)
+            
+            return_code = process.wait()
+            
+            if return_code != 0:
+                print(f"Claude exited with status {return_code}", file=sys.stderr)
+            
+    except KeyboardInterrupt:
+        print("\nInterrupted by user", file=sys.stderr)
+        process.terminate()
+        process.wait()
+        return_code = 130
+    except Exception as e:
+        print(f"Error running Claude: {e}", file=sys.stderr)
+        return_code = 1
+    finally:
+        os.chdir(original_dir)
+    
+    # Handle output.txt after Claude completes successfully
+    if return_code == 0:
+        output_content = read_output_file(output_dir)
+        
+        if args.return_output:
+            # Stream to stdout
+            if output_content:
+                print(output_content, end='')
+            else:
+                print("Warning: output.txt was not created", file=sys.stderr)
+        elif args.output:
+            # Write to specified file
+            if output_content:
+                try:
+                    output_path = args.output
+                    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+                    with open(output_path, 'w') as f:
+                        f.write(output_content)
+                    print(f"Output written to: {output_path}", file=sys.stderr)
+                except Exception as e:
+                    print(f"Error writing to {output_path}: {e}", file=sys.stderr)
+            else:
+                print("Warning: output.txt was not created", file=sys.stderr)
+    
+    # Print summary of additional files created (unless streaming to stdout)
+    if not args.return_output:
+        # Check for additional files
+        result_files = []
+        for root, dirs, files in os.walk(output_dir):
+            for file in files:
+                if file != output_file:
+                    rel_path = os.path.relpath(os.path.join(root, file), output_dir)
+                    result_files.append(rel_path)
+        
+        if result_files:
+            print(f"Files created: {', '.join(result_files)}", file=sys.stderr)
+    
+    return return_code
+
+def main():
+    """Main entry point"""
+    # Check for simple mode first
+    if len(sys.argv) > 1 and sys.argv[1] == "--simple":
+        handle_simple_mode()
+        return
+    
+    # Check if --simple appears anywhere else
+    if "--simple" in sys.argv[1:]:
+        print("Error: --simple must be the first argument for passthrough mode", file=sys.stderr)
+        sys.exit(1)
+    
+    args = parse_arguments()
+    
+    # Read prompt
+    prompt = read_prompt(args)
+    if args.verbose and not args.return_output:
+        print(f"Prompt: {prompt[:100]}{'...' if len(prompt) > 100 else ''}", file=sys.stderr)
+    
+    # Setup output
+    output_dir, output_file = get_output_directory(args)
+    
+    # Build command
+    cmd = build_claude_command(prompt, args)
+    
+    # Run Claude
+    exit_code = run_claude(cmd, output_dir, output_file, args)
+    
+    sys.exit(exit_code)
+
+if __name__ == "__main__":
+    main()

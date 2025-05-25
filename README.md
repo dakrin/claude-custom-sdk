@@ -30,7 +30,10 @@ Claude SDK wraps the Claude CLI to provide automatic session management and stru
 
 ```bash
 # Make the script executable
-chmod +x claude_sdk.py
+chmod +x claude-sdk
+
+# Add to PATH in ~/.bashrc
+export PATH="$PATH:/path/to/claude-sdk"
 ```
 
 ## Usage
@@ -39,57 +42,57 @@ chmod +x claude_sdk.py
 
 ```bash
 # Default - creates .claude-sdk/TIMESTAMP/
-./claude_sdk.py --prompt "Write a hello world program"
+claude-sdk --prompt "Write a hello world program"
 
 # Return output to stdout
-./claude_sdk.py --prompt "Explain Python decorators" --return-output
+claude-sdk --prompt "Explain Python decorators" --return-output
 
 # Simple mode - direct passthrough to Claude (auto-adds -p)
-./claude_sdk.py --simple --help
-./claude_sdk.py --simple --output-format text "What is 2+2?"
-./claude_sdk.py --simple --continue
-./claude_sdk.py --simple -r  # Resume session
+claude-sdk --simple --help
+claude-sdk --simple --output-format text "What is 2+2?"
+claude-sdk --simple --continue
+claude-sdk --simple -r  # Resume session
 ```
 
 ### Session Management
 
 ```bash
 # Default: Reads from prompt.txt, creates .claude-sdk/20250125_143022/
-./claude_sdk.py
+claude-sdk
 
 # Named session: Creates .claude-sdk/20250125_143022_feature_x/
-./claude_sdk.py --session-name feature_x
+claude-sdk --session-name feature_x
 
 # Save output to file (still creates .claude-sdk session)
-./claude_sdk.py --prompt "Analyze this" -o results/analysis.txt
+claude-sdk --prompt "Analyze this" -o results/analysis.txt
 ```
 
 ### Output Modes
 
 ```bash
 # Default: Session info only
-./claude_sdk.py --prompt "Analyze this"
+claude-sdk --prompt "Analyze this"
 # Output: Session: .claude-sdk/20250125_143022
 
 # Return output: Streams output.txt to stdout
-./claude_sdk.py --prompt "Analyze this" --return-output
+claude-sdk --prompt "Analyze this" --return-output
 # Output: [Contents of output.txt]
 
 # Pipe to file
-./claude_sdk.py --prompt "Generate docs" --return-output > docs.md
+claude-sdk --prompt "Generate docs" --return-output > docs.md
 ```
 
 ### Tool Configuration
 
 ```bash
 # Use default tools
-./claude_sdk.py
+claude-sdk
 
 # Select specific tools
-./claude_sdk.py -t Read Write Edit
+claude-sdk -t Read Write Edit
 
 # Enable all available tools
-./claude_sdk.py --all-tools
+claude-sdk --all-tools
 ```
 
 ## Command-Line Arguments
@@ -113,32 +116,32 @@ chmod +x claude_sdk.py
 ### Simple Mode
 ```bash
 # Get help
-./claude_sdk.py --simple --help
+claude-sdk --simple --help
 
 # Quick tasks
-./claude_sdk.py --simple --output-format text "What is 15% of 240?"
+claude-sdk --simple --output-format text "What is 15% of 240?"
 
 # Continue conversation
-./claude_sdk.py --simple --continue
+claude-sdk --simple --continue
 
 # Resume specific session
-./claude_sdk.py --simple -r session_id
+claude-sdk --simple -r session_id
 ```
 
 ### Session Tracking
 ```bash
 # Analyze code with full tracking
-./claude_sdk.py -p analyze_code.txt --session-name code_review
+claude-sdk -p analyze_code.txt --session-name code_review
 
 # Get analysis output for further processing  
-./claude_sdk.py -p analyze_code.txt --return-output | grep "TODO"
+claude-sdk -p analyze_code.txt --return-output | grep "TODO"
 ```
 
 ### Batch Processing
 ```bash
 # Process multiple files with session tracking
 for file in *.py; do
-    ./claude_sdk.py --prompt "Analyze $file for security issues" \
+    claude-sdk --prompt "Analyze $file for security issues" \
     --session-name "security_${file%.py}" --return-output \
     > "reports/${file%.py}_security.txt"
 done
@@ -147,7 +150,7 @@ done
 ### Interactive Development
 ```bash
 # Run analysis and see what files were created
-./claude_sdk.py -p refactor_request.txt --session-name refactor_v1
+claude-sdk -p refactor_request.txt --session-name refactor_v1
 
 # Check the session
 ls -la .claude-sdk/*/
@@ -159,14 +162,14 @@ import subprocess
 
 # Get output directly
 result = subprocess.check_output([
-    "./claude_sdk.py", 
+    "claude-sdk", 
     "--prompt", "Calculate 15+27",
     "--return-output"
 ]).decode().strip()
 
 # Save to file
 subprocess.run([
-    "./claude_sdk.py",
+    "claude-sdk",
     "--prompt", "Analyze this code", 
     "-o", "analysis.txt"
 ])
