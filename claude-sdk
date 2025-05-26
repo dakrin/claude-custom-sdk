@@ -50,6 +50,15 @@ def save_system_prompt(output_dir: str, system_prompt: str):
     except Exception:
         pass  # Not critical if this fails
 
+def save_full_prompt(output_dir: str, full_prompt: str):
+    """Save the full prompt (including system prompt) for this session"""
+    try:
+        prompt_path = os.path.join(output_dir, "prompt.txt")
+        with open(prompt_path, 'w') as f:
+            f.write(full_prompt)
+    except Exception:
+        pass  # Not critical if this fails
+
 def handle_simple_mode():
     """Handle simple passthrough mode"""
     # Remove the script name and --simple flag
@@ -227,6 +236,9 @@ def run_claude(cmd: List[str], prompt: str, system_prompt: str, output_dir: str,
     
     # Save system prompt for this session
     save_system_prompt(output_dir, system_prompt)
+    
+    # Save full prompt for this session
+    save_full_prompt(output_dir, prompt)
     
     original_dir = os.getcwd()
     os.chdir(output_dir)
